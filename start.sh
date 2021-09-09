@@ -1,5 +1,8 @@
 #!/bin/bash
 
+node --version
+npm --version
+
 ORGANIZATION=$ORGANIZATION
 REG_TOKEN=$REG_TOKEN
 
