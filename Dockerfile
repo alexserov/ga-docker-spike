@@ -1,24 +1,26 @@
-# base
-FROM ubuntu:20.04
+#=====================
+# BASE
+#=====================
+FROM ubuntu:20.04 as base
 
 #use bash
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
 
 # set the github runner version
-ARG RUNNER_VERSION="2.281.1"
 ARG DEBIAN_FRONTEND=noninteractive
 
 # update the base packages and add a non-sudo user
-RUN apt-get update -y && apt-get upgrade -y && useradd -m docker
+RUN apt update -y && apt upgrade -y
 
 # install python and the packages the your code depends on along with jq so we can parse JSON
 # add additional packages as necessary
 # Install base dependencies
-RUN apt-get update && apt-get install -y -q --no-install-recommends \
+RUN apt update && apt install -y -q --no-install-recommends \
         apt-transport-https \
         build-essential \
         ca-certificates \
         curl \
+        software-properties-common \
         git \
         libssl-dev \
         wget \
@@ -28,24 +30,13 @@ RUN apt-get update && apt-get install -y -q --no-install-recommends \
         python3-venv \
         python3-dev \
         p7zip-full \
+        mc \
+        gpg-agent \
     && rm -rf /var/lib/apt/lists/*
-
-# RUN mkdir -p /usr/local/nvm 
-# ENV NVM_DIR /usr/local/nvm
-
-# # Install nvm with node and npm
-# RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash \
-#     && . $NVM_DIR/nvm.sh \
-#     && nvm install lts/* \
-#     && nvm use default
-
-# ENV NODE_VERSION $(cat $NVM_DIR/alias/default)
-# ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
-# ENV PATH      $NVM_DIR/v$NODE_VERSION/bin:$PATH
 
 # Node
 RUN curl -L https://deb.nodesource.com/setup_12.x | bash -
-RUN apt-get install -y nodejs
+RUN apt install -y nodejs
 RUN npm i -g npm@6
 RUN npm cache clean --force
 RUN npm set progress=false
@@ -55,29 +46,52 @@ RUN npm set fetch-retries 5
 RUN npm set audit false
 RUN npm set fund false
 
+#=====================
+# HOST
+#=====================
+FROM base as host
+
+#register gpg key
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg > gpg
+RUN apt-key add ./gpg
+RUN rm ./gpg
+#add docker repo
+RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
+RUN apt-cache policy docker-ce
+RUN apt install docker-ce -y
+
+#=====================
+# RUNNER-BASE
+#=====================
+FROM base as runner-base
+
+RUN useradd -m docker
+
 # cd into the user directory, download and unzip the github actions runner
-RUN cd /home/docker && mkdir actions-runner && cd actions-runner \
-    && curl -O -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
-    && tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
+RUN RUNNER_VERSION=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/actions/runner/releases/latest | jq -r .name) \
+    && cd /home/docker && mkdir actions-runner && cd actions-runner \
+    && curl -O -L https://github.com/actions/runner/releases/download/${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION:1}.tar.gz \
+    && tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION:1}.tar.gz
 
 # install some additional dependencies
 RUN chown -R docker ~docker && /home/docker/actions-runner/bin/installdependencies.sh
-RUN mkdir -p /opt/runner/meta
-RUN chown -R docker /opt/runner/meta
 
-RUN apt-get install mc -y
+#=====================
+# RUNNER
+#=====================
+FROM runner-base as runner
 
-ENV GITHUB_API_URL=https://magic.com
-
-# copy over the start.sh script
 COPY start.sh start.sh
-
-# make the script executable
 RUN chmod +x start.sh
-
-# since the config and run script for actions are not allowed to be run by root,
-# set the user to "docker" so all subsequent commands are run as the docker user
 USER docker
-
-# set the entrypoint to the start.sh script
 ENTRYPOINT ["./start.sh"]
+
+#=====================
+# RUNNER
+#=====================
+FROM runner-base as runner-registrator
+
+COPY register.sh register.sh
+RUN chmod +x register.sh
+USER docker
+ENTRYPOINT ["./register.sh"]
