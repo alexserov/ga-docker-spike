@@ -10,8 +10,3 @@ services:
     build:
       context: ./
       target: runner
-  runner-registrator:
-    image: ${DOCKER_REGISTRY}/${DOCKER_REPO_NAME}:registrator
-    build:
-      context: ./
-      target: runner-registrator

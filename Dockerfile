@@ -59,6 +59,9 @@ RUN rm ./gpg
 RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
 RUN apt-cache policy docker-ce
 RUN apt install docker-ce -y
+RUN useradd -m host
+RUN usermod -aG docker host
+WORKDIR /home/host
 
 #=====================
 # RUNNER-BASE
@@ -75,6 +78,7 @@ RUN RUNNER_VERSION=$(curl -H "Accept: application/vnd.github.v3+json" https://ap
 
 # install some additional dependencies
 RUN chown -R docker ~docker && /home/docker/actions-runner/bin/installdependencies.sh
+WORKDIR /home/docker
 
 #=====================
 # RUNNER
@@ -85,13 +89,3 @@ COPY start.sh start.sh
 RUN chmod +x start.sh
 USER docker
 ENTRYPOINT ["./start.sh"]
-
-#=====================
-# RUNNER
-#=====================
-FROM runner-base as runner-registrator
-
-COPY register.sh register.sh
-RUN chmod +x register.sh
-USER docker
-ENTRYPOINT ["./register.sh"]

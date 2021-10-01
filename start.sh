@@ -3,31 +3,32 @@
 node --version
 npm --version
 
-ORGANIZATION=$ORGANIZATION
-REG_TOKEN=$REG_TOKEN
+DATA=$(echo $1 | base64 -d)
+TARGET_URL=$(echo ${DATA} | jq -r .url)
+TARGET_TOKEN=$(echo ${DATA} | jq -r .token)
+TARGET_TYPE=$(echo ${DATA} | jq -r .type)
+TARGET_NAME=$(echo ${DATA} | jq -r .name)
+HOST_PORT=$(echo ${DATA} | jq -r .port)
 
-cd /home/docker/actions-runner
+mkdir runners
+cd actions-runner
 
-CONTAINER_FLAG_DIR=/opt/runner/meta/${CONTAINER_ID}
+#configure runner
+echo $TARGET_NAME
+./config.sh --url $TARGET_URL \
+            --token $TARGET_TOKEN \
+            --unattended \
+            --replace \
+            --name $TARGET_NAME \
+            --labels $TARGET_TYPE \
+            --ephemeral #https://docs.github.com/en/actions/hosting-your-own-runners/autoscaling-with-self-hosted-runners#using-ephemeral-runners-for-autoscaling
 
-if [ ! -d "$CONTAINER_FLAG_DIR" ]; then
-    mkdir $CONTAINER_FLAG_DIR
-    ./config.sh --url https://github.com/${ORGANIZATION} --token ${REG_TOKEN}
-    cp ./.credentials $CONTAINER_FLAG_DIR
-    cp ./.credentials_rsaparams $CONTAINER_FLAG_DIR
-    cp ./.env $CONTAINER_FLAG_DIR
-    cp ./.path $CONTAINER_FLAG_DIR
-    cp ./.runner $CONTAINER_FLAG_DIR
-else
-    cp -a $CONTAINER_FLAG_DIR/. .
-fi
+cleanup() {
+    echo "Removing runner..."
+    ./config.sh remove --unattended --token $(curl host.docker.internal:${HOST_PORT}/removeToken)
+}
 
-# cleanup() {
-#     echo "Removing runner..."
-#     ./config.sh remove --unattended --token ${REG_TOKEN}
-# }
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
-# trap 'cleanup; exit 130' INT
-# trap 'cleanup; exit 143' TERM
-
-./run.sh --once & wait $!
+./run.sh & wait $!
